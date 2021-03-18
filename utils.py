@@ -1,3 +1,8 @@
+import numpy as np
+from sklearn.metrics import mean_squared_error
+import matplotlib.patches as pat
+
+
 def ellipseToGaussian(x_center,y_center,r_xi,r_eta,alpha_rad):
     mux= x_center
     muy = y_center 
@@ -45,15 +50,15 @@ def KL_div(mu1,mu2,covMat1,covMat2):
 
 def direction(mean,center_ref,bruit = 0.2):
     """renvoie la direction à suivre pour arriver au centre"""
-    dire = center_ref-mean
-    dire = dire/LA.norm(dire, axis=1)[:,np.newaxis]
+    dire = center_ref-meanw
+    dire = dire/np.linalg.norm(dire, axis=1)[:,np.newaxis]
     dire += np.random.randn(mean.shape[0],2) * bruit
     return dire
     
 def vitesse(covMat):
     """renvoie la vitesse du tourbillon"""
     u, s, vh = np.linalg.svd(covMat)
-    return s[:,0]**0.5 + s[:,1]**0.5
+    return s[...,0]**0.5 + s[...,1]**0.5
 
 def converge_center(tourbillons,center,bruit = 0.2):
     """renvoie la nouvelle position du tourbillon, le tourbillon va se diriger vers center"""
@@ -82,11 +87,11 @@ def follow_gradient(tourbillons,list_mean_gauss,list_covMat_gauss,bruit = 0.2):
     new_dire = dire.copy()
     new_dire[...,0] = -dire[...,1]
     new_dire[...,1] = dire[...,0]
-    new_dire = new_dire/LA.norm(new_dire)
+    new_dire = new_dire/np.linalg.norm(new_dire, axis=-1)[...,np.newaxis]
     new_dire += np.random.randn(*new_dire.shape) * bruit
     vit = vitesse(covMat)
 
-    return np.concatenate([mean + (vit[:,np.newaxis] * dire), tourbillons[:,2:]], axis=1)
+    return np.concatenate([mean + (vit[:,np.newaxis] * new_dire), tourbillons[:,2:]], axis=1)
 
 def generer_ellipses(N):
     """génère N ellipses, renvoie un array de taille Nx5"""
@@ -120,11 +125,9 @@ def ellipseToGaussian(x_center,y_center,r_xi,r_eta,alpha_rad):
     
     return np.vstack([mux, muy, CovMatBis[:,0,0], CovMatBis[:,0,1], CovMatBis[:,1,1]]).T
 
-def step(tourbillons, bruit=0.2, center=None, alpha=None, model="follow gradient"):
+def step(tourbillons, list_mean_gauss, list_covMat_gauss, bruit=0.2, center=None, alpha=None, model="follow gradient"):
     """Calcule le prochain état des tourbillons
     tourbillons de taille Nx5"""
-    global list_mean_gauss
-    global list_covMat_gauss
     if model == "spiral":
         next_tourbillons = spiral(tourbillons, bruit=bruit, alpha=alpha)
     elif model == "centre":
@@ -133,14 +136,14 @@ def step(tourbillons, bruit=0.2, center=None, alpha=None, model="follow gradient
         next_tourbillons = follow_gradient(tourbillons, list_mean_gauss, list_covMat_gauss)
     return next_tourbillons
 
-def generer_catalogue(N, bruit=0.2, center=None, alpha=None, model="follow gradient"):
+def generer_catalogue(N, means, covMats, bruit=0.2, center=None, alpha=None, model="follow gradient"):
     """ Le catalogue est un array de taille Nx2x10 : nb de tourbillons x (anologues,successeurs) x nb de paramètres
     renvoie un catalogue de taille Nx2x10"""
     catalogue = np.empty((N,2,10))
     ellipses = generer_ellipses(N)
     gaussians = ellipseToGaussian(ellipses[:,0], ellipses[:,1], ellipses[:,2], ellipses[:,3], ellipses[:,4]) # taille Nx5
-    next_gaussians = step(gaussians, bruit=bruit, center=center, alpha=alpha, model=model)
-    next2_gaussians = step(next_gaussians, bruit=bruit, center=center, alpha=alpha, model=model)
+    next_gaussians = step(gaussians, means, covMats, bruit=bruit, center=center, alpha=alpha, model=model)
+    next2_gaussians = step(next_gaussians, means, covMats, bruit=bruit, center=center, alpha=alpha, model=model)
     catalogue[:,0,:5] = gaussians
     catalogue[:,0,5:] = next_gaussians
     catalogue[:,1,:5] = next_gaussians
@@ -155,14 +158,24 @@ def plot_tourbillon(tourbillon):
     C = np.array([[tourbillon[2], tourbillon[3]],[tourbillon[3],tourbillon[4]]])
     u, s, vh = np.linalg.svd(C)
     theta = np.sign(C[1,0]) * np.arccos(np.trace(C)/2)
-    a = pat.Ellipse(xy=mean, width=6*s[0]**0.5, height=6*s[1]**0.5, angle=theta*180/np.pi)
+    a = pat.Ellipse(xy=mean, width=6*s[0]**0.5, height=6*s[1]**0.5, angle=theta*180/np.pi, alpha=0.2)
     return a
+
+def plot_trajectory(traj_tourbillon, ax, color="red"):
+    """traj_tourbillon of shape Nx5, ax is a matplotlib axe"""
+    for tourbillon in traj_tourbillon:
+        patch = plot_tourbillon(tourbillon)
+        patch.set_facecolor(color)
+        ax.add_artist(patch)
+    return ax
 
 
 from numpy.linalg import det
 from numpy.linalg import inv
 
 def gauss2d(pos, mean, covMat, dirs):
+    """pos de taille (...,2), mean de taille (N,2), covMat de taille (N,2,2), dirs array de -1 ou 1 de taille (N)
+    renvoie un array de taille (...,N) qui à chaque position associe la valeur des gaussiennes"""
     pos_centered = pos[...,np.newaxis,:]-mean
     inv_covMat = np.linalg.inv(covMat)
     pos_inv_cov = np.swapaxes(np.diagonal(np.dot(pos_centered,inv_covMat), axis1=-3, axis2=-2), -2, -1)
@@ -180,10 +193,6 @@ def gradient_gauss2d(pos, mean, covMat, dirs):
     
 def sum_gaus2d(pos, mean, covMat, dirs):
     return gauss2d(pos, mean, covMat, dirs).sum(axis=-1)
-
-
-#def gradient_gauss2d(pos,mean,covMat):
-#    return np.dot(inv(covMat),pos-mean)*gaus2d(pos,mean,covMat)
 
 def sum_gradient_gauss2d(pos, mean, covMat, dirs):
     """renvoie un array de taille (...,2)"""
@@ -206,7 +215,6 @@ def playground():
     dirs = [1 if (i%2 == 0) else -1 for i in range(len(list_mean))]
     x, y = np.meshgrid(X,Y)
     pos = np.stack([x,y], axis=-1)
-    print(pos.shape)
     Z = sum_gaus2d(pos,list_mean,list_covMat, dirs)
     return list_mean, list_covMat, X, Y, Z
 
@@ -220,14 +228,11 @@ def wasserstein(u,v):
     return wasserstein_metric(mean1, mean2, cov1, cov2)
 
 def new_wasserstein(u, v):
-    """u,v de taille Nx10"""
+    """u,v de taille Nx10, renvoie un tableau de taille N"""
     return wasserstein(u[...,:5], v[...,:5]) + wasserstein(u[...,5:], v[...,5:])
 
-def gaussian_kernel(u, v, l=1.):
-    return np.exp(-np.square(new_wasserstein(u, v))/l**2)
-
-def compute_weights(x, neighbors, **args):
-    kernels = gaussian_kernel(np.repeat(x[np.newaxis,...], neighbors.shape[0], axis=0), neighbors, **args)
+def compute_weights(distances, l=1.):
+    kernels = np.exp(-(distances/l)**2)
     return kernels / np.sum(kernels)
 
 
@@ -246,51 +251,50 @@ def locally_linear_mean(x, neighbors, successors, weights):
     X_centered = X - X_mean
     Y_centered = Y - Y_mean
     cov_X = X_centered.T @ W @ X_centered
-    cov_X_inv = np.linalg.pinv(cov_X, rcond=0.01)
+    cov_X_inv = np.linalg.pinv(cov_X)
     cov_YX = Y_centered.T @ W @ X_centered
     return Y_mean + cov_YX @ cov_X_inv @ (x - X_mean)
 
 
-def predictions(catalogue, catalogue_obs, method):
+def predictions(catalogue, observations, method, k=100):
     """predict the next state of a list of tourbillons
-    catalogue_obs of shape Mx10, returns array of shape Mx10"""
+    observations of shape Mx10, returns array of shape Mx10"""
     tourbillons_suivant=[]
     predecesseurs = catalogue[:,0,:]
     N = predecesseurs.shape[0]
-    k = 50
-    for tourbillon in catalogue_obs:
+    for tourbillon in observations:
         distances = new_wasserstein(np.stack([tourbillon]*N, axis=0), predecesseurs)
-        indices_wt = np.argpartition(distances, k)[:k]
+        indices_wt = np.argpartition(distances, k)[:k] # indices of the k nearest neighbors
         neighbors = catalogue[indices_wt,0,:]
         successors = catalogue[indices_wt,1,:]
-        weights = compute_weights(tourbillon, neighbors)
+        distances_neighbors = distances[indices_wt]
+        weights = compute_weights(distances_neighbors, l=np.median(distances_neighbors))
         pred = method(tourbillon, neighbors, successors, weights)
         tourbillons_suivant.append(pred)
     return np.array(tourbillons_suivant)
 
 
-from sklearn.metrics import mean_squared_error
 
-def list_prediction(catalogue,nb_predictions, catalogue_obs, method):
+def list_prediction(catalogue,nb_predictions, observations, method):
     """construit une matrice de taille nombre d'ellipses x nb_predictions x 10
     cette matrice représente les valeurs prédites"""
-    mat_prediction = np.empty((catalogue_obs.shape[0],nb_predictions,5))
-    next_obs = catalogue_obs[:,1,:]
+    mat_prediction = np.empty((observations.shape[0],nb_predictions,observations.shape[1]))
+    next_obs = observations
     for j in range(nb_predictions):
-        next_obs = predictions(catalogue,next_obs, method)
-        mat_prediction[:,j] = next_obs[:,:5]
+        next_obs = predictions(catalogue,next_obs, method, k=100)
+        mat_prediction[:,j] = next_obs
     return mat_prediction
 
-def list_true_value(catalogue,nb_predictions,catalogue_obs,bruit=0.2,center=None,alpha=None,model="follow gradient"):
-    """construit une matrice de taille nombre d'ellipses x nb_predictions+1 x 2 (coordonnées en x et y)
+def list_true_value(catalogue, means, covMats, nb_predictions,observations,bruit=0.2,center=None,alpha=None,model="follow gradient"):
+    """construit une matrice de taille nombre d'ellipses x nb_predictions x 5
     cette matrice représente les valeurs réelles si les tourbillons suivent le modèle prédéfini"""
-    mat_true = np.empty((catalogue_obs.shape[0],nb_predictions,5))
-    next_gaussians = catalogue_obs[:,0,5:]
+    mat_true = np.empty((observations.shape[0],nb_predictions,5))
+    next_gaussians = observations[:,5:]
     for j in range(nb_predictions):
-        next_gaussians = step(next_gaussians, bruit=bruit, center=center, alpha=alpha, model=model)
+        next_gaussians = step(next_gaussians, means, covMats, bruit=bruit, center=center, alpha=alpha, model=model)
         mat_true[:,j] = next_gaussians
     return mat_true
 
 def AnDA_RMSE(a,b):
     """ Compute the Root Mean Square Error between 2 n-dimensional vectors. """
-    return np.sqrt(np.mean((a-b)**2))
+    return np.sqrt(np.mean((a-b)**2, axis=-1))
