@@ -308,8 +308,8 @@ def AnDA_Wasserstein(a,b):
     res = res.reshape((x,y))
     return res
 
-def load_playground():
-    npzfile = np.load("playground_file.npz")
+def load_playground(filename = "data\playground_file.npz"):
+    npzfile = np.load(filename)
     list_mean_gauss = npzfile['list_mean_gauss']
     list_covMat_gauss = npzfile['list_covMat_gauss']
     X = npzfile['X']
@@ -317,7 +317,7 @@ def load_playground():
     Z = npzfile['Z'].T
     return list_mean_gauss, list_covMat_gauss, X, Y, Z
 
-def load_data(filename ='catalogue.txt'):
+def load_data(filename ='data\catalogue.txt'):
     data = np.loadtxt(filename)
     data = data.reshape((int(data.shape[0]/2),2,10))
     return data
