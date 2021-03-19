@@ -298,3 +298,12 @@ def list_true_value(catalogue, means, covMats, nb_predictions,observations,bruit
 def AnDA_RMSE(a,b):
     """ Compute the Root Mean Square Error between 2 n-dimensional vectors. """
     return np.sqrt(np.mean((a-b)**2, axis=-1))
+
+def AnDA_Wasserstein(a,b):
+    """ Compute the Wassertstein metric between 2 n-dimensional vectors. """
+    x, y = a.shape[0], a.shape[1]
+    a = a.reshape((-1,5))
+    b = b.reshape((-1,5))
+    res = wasserstein(a,b)
+    res = res.reshape((x,y))
+    return res
