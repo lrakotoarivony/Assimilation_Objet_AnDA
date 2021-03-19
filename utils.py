@@ -275,13 +275,13 @@ def predictions(catalogue, observations, method, k=100):
 
 
 
-def list_prediction(catalogue,nb_predictions, observations, method,nb_voisin = 100):
+def list_prediction(catalogue,nb_predictions, observations, method, k=50):
     """construit une matrice de taille nombre d'ellipses x nb_predictions x 10
     cette matrice représente les valeurs prédites"""
     mat_prediction = np.empty((observations.shape[0],nb_predictions,observations.shape[1]))
     next_obs = observations
     for j in range(nb_predictions):
-        next_obs = predictions(catalogue,next_obs, method, k=nb_voisin)
+        next_obs = predictions(catalogue,next_obs, method, k=k)
         mat_prediction[:,j] = next_obs
     return mat_prediction
 
